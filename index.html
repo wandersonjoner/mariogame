@@ -1,0 +1,412 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title> Mario Game em JavaScript </title>
+        <script src="Sprite.js"></script>
+        <script src="Sounds.js"></script>
+
+
+
+        <style> 
+            canvas{
+                position:absolute;
+                top:0px;
+                bottom:0px;
+                left:0px;
+                right:0px;
+                margin:auto;
+            }
+        </style>
+
+    </head>
+
+    <body>
+        <script>
+            var canvas, ctx, ALTURA, LARGURA, frames = 0, maxPulos = 3, velocidade = 6,
+                    estadoAtual = 0, record = 0, img, tocouperdeu = false,
+                    pontosParaNovaFase = [5, 10, 15, 20],
+                    faseAtual = 0,
+                    labelNovaFase = {texto: "",
+                        opacidade: 0.0,
+                        fadeIn: function(dt) {
+                            var fadeInId = setInterval(function() {
+                                if (labelNovaFase.opacidade < 1.0) {
+                                    labelNovaFase.opacidade += 0.01;
+                                } else {
+                                    clearInterval(fadeInId);
+                                }
+
+
+                            }, 10 * dt);
+                        },
+                        fadeOut: function(dt) {
+                            var fadeOutId = setInterval(function() {
+                                if (labelNovaFase.opacidade > 0.0) {
+                                    labelNovaFase.opacidade -= 0.01;
+                                } else {
+                                    clearInterval(fadeOutId);
+                                }
+                            }, 10 * dt);
+                        }
+                    },
+            estados = {
+                jogar: 0,
+                jogando: 1,
+                perdeu: 2
+            };
+
+            createjs.Sound.registerSound("sons/pulo.wav", "pulo");
+            createjs.Sound.registerSound("sons/perdeu.wav", "perdeu");
+            createjs.Sound.registerSound("sons/perdeuvida2.wav", "perdeuvida");
+            createjs.Sound.registerSound("sons/ganhouvida.wav", "ganhouvida");
+            createjs.Sound.registerSound("sons/mariocaindo.wav", "mariocaindo");
+            createjs.Sound.registerSound("sons/fundo.wav", "fundo");
+
+            chao = {
+                y: 550,
+                x: 0,
+                altura: 50,
+                atualiza: function() {
+                    this.x -= velocidade;
+                    if (this.x <= -30) {
+                        this.x += 30;
+                    }
+                },
+                desenha: function() {
+                    spriteChao.desenha(this.x, this.y);
+                    spriteChao.desenha(this.x + spriteChao.largura, this.y);
+                }
+            }
+
+            bloco = {
+                x: 50,
+                y: 0,
+                altura: spriteBola.altura,
+                largura: spriteBola.largura,
+                gravidade: 1.5,
+                velocidade: 0,
+                forcaDoPulo: 25,
+                qntPulos: 0,
+                score: 0,
+                rotacao: 0,
+                vidas: 3,
+                colidindo: false,
+                atualiza: function() {
+                    this.velocidade = this.velocidade + this.gravidade;
+                    this.y = this.y + this.velocidade;
+                    this.rotacao += Math.PI / 180 * velocidade;
+
+                    if (this.y > chao.y - this.altura && estadoAtual != estados.perdeu) {
+                        this.y = chao.y - this.altura;
+                        this.qntPulos = 0;
+                        this.velocidade = 0;
+                    }
+                },
+                pula: function() {
+                    if (this.qntPulos < maxPulos) {
+                        this.velocidade = -this.forcaDoPulo;
+                        this.qntPulos++;
+                        createjs.Sound.play("pulo");
+                    }
+                },
+                reset: function() {
+                    this.velocidade = 0;
+                    this.y = 0;
+
+                    if (this.score > record) {
+                        localStorage.setItem("record", this.score);
+                        record = this.score;
+                    }
+
+                    this.vidas = 3;
+                    this.score = 0;
+                    tocouperdeu = false;
+
+                    velocidade = 6;
+                    faseAtual = 0;
+                    this.gravidade = 1.6;
+                },
+                desenha: function() {
+                    ctx.save();
+                    // operacoes para rotacionar
+                    ctx.translate(this.x + this.largura /
+                            2, this.y + this.altura / 2);
+                   
+                    spriteBola.desenha(-this.largura / 2, -this.altura / 2);
+                    ctx.restore();
+                }
+            }
+
+            obstaculos = {
+                _obs: [],
+                _scored: false,
+                _sprites: [spriteobs1, spriteobs2, spriteobs3, spriteobs4, spriteobs5],
+                tempoInsere: 0,
+                insere: function() {
+                    this._obs.push({
+                        x: LARGURA,
+                        y: chao.y - Math.floor(20 + Math.random() * 100),
+                        //largura: 30 + Math.floor(21 * Math.random()),
+                        largura: 50,
+                        altura: 30 + Math.floor(120 * Math.random()),
+                        //cor: this.cores[Math.floor(5 * Math.random())]
+                        sprite: this._sprites[Math.floor(this._sprites.length * Math.random())]
+                    });
+
+                    this.tempoInsere = 50 + Math.floor(20 * Math.random()) - velocidade	;
+                },
+                atualiza: function() {
+
+                    if (this.tempoInsere == 0) {
+                        this.insere();
+                    } else {
+                        this.tempoInsere--;
+                    }
+
+                    for (var i = 0, tam = this._obs.length; i < tam; i++) {
+                        var obj = this._obs[i];
+                        obj.x -= velocidade;
+
+  
+                        if (!bloco.colidindo
+                                && obj.x <= bloco.x + bloco.largura
+                                && bloco.x <= obj.x + obj.largura
+                                && obj.y <= bloco.y + bloco.altura) {
+
+                            bloco.colidindo = true;
+                            setTimeout(function() {
+                                bloco.colidindo = false;
+                            }, 500);
+
+                            if (bloco.vidas >= 1) {
+                                bloco.vidas--;
+                                createjs.Sound.play("perdeuvida");
+                            }
+
+                            if (bloco.vidas == 0) {
+                                estadoAtual = estados.perdeu;
+                            }
+
+                        } else if (obj.x <= 0 && !obj._scored) {
+                            bloco.score = bloco.score + 1;
+                            obj._scored = true;
+
+                            if (faseAtual < pontosParaNovaFase.length && bloco.score == pontosParaNovaFase[faseAtual]) {
+                                passarDeFase();
+                            }
+							
+							if (faseAtual == 4) {
+								bloco.gravidade = bloco.gravidade + 0.05;
+							}
+
+
+                        } else if (obj.x <= -obj.largura) {
+                            this._obs.splice(i, 1);
+                            tam--;
+                            i--;
+                        }
+                    }
+                },
+                limpa: function() {
+                    this._obs = [];
+                },
+                desenha: function() {
+                    for (var i = 0, tam = this._obs.length; i < tam; i++) {
+                        var obs = this._obs[i];
+                        obs.sprite.desenha(obs.x, obs.y);
+                    }
+                }
+            };
+
+
+            function clique(event) {
+                if (estadoAtual == estados.jogando) {
+                    bloco.pula();
+                } else if (estadoAtual == estados.jogar) {
+                    estadoAtual = estados.jogando;
+                } else if (estadoAtual == estados.perdeu && bloco.y >= 2 * ALTURA) {
+                    estadoAtual = estados.jogar;
+                    obstaculos.limpa();
+                    bloco.reset();
+                }
+            }
+
+            function passarDeFase() {
+                velocidade++;
+                faseAtual = faseAtual + 1;
+                bloco.vidas++;
+                createjs.Sound.play("ganhouvida");
+
+                labelNovaFase = "Level " + faseAtual;
+                // labelNovaFase.fadeIn(0.4);
+
+                //setTimeout(function() {
+                //    labelNovaFase.fadeOut(0.4);
+                //}, 800);
+            }
+
+
+            function main() {
+                ALTURA = window.innerHeight;
+                LARGURA = window.innerWidth;
+                if (LARGURA >= 500) {
+                    LARGURA = 600;
+                    ALTURA = 600;
+                }
+                canvas = document.createElement("canvas");
+                canvas.width = LARGURA; //largura do jogo
+                canvas.height = ALTURA; // altura do jogo
+                canvas.style.border = "2px solid #C99999"
+
+                ctx = canvas.getContext("2d");
+                document.body.appendChild(canvas);
+                document.addEventListener("mousedown", clique);
+
+                estadoAtual = estados.jogar;
+                record = localStorage.getItem("record");
+                if (record == null)
+                    record = 0;
+
+                imgbg = new Image();
+                imgbg.src = "imagens/bg.jpg";
+
+                imgbola = new Image();
+                imgbola.src = "imagens/mario.png";
+
+                imgchao = new Image();
+                imgchao.src = "imagens/chao.png";
+
+                imgjogar = new Image();
+                imgjogar.src = "imagens/jogar.png";
+
+                imgperdeu = new Image();
+                imgperdeu.src = "imagens/perdeu.jpg";
+
+                imgscore = new Image();
+                imgscore.src = "imagens/score.png";
+
+                imgobs1 = new Image();
+                imgobs1.src = "imagens/asfalto.jpg";
+
+                imgobs2 = new Image();
+                imgobs2.src = "imagens/asfalto.jpg";
+
+                imgobs3 = new Image();
+                imgobs3.src = "imagens/asfalto.jpg";
+
+                imgobs4 = new Image();
+                imgobs4.src = "imagens/asfalto.jpg";
+
+                imgobs5 = new Image();
+                imgobs5.src = "imagens/asfalto.jpg";
+				
+				imgvida = new Image();
+                imgvida.src = "imagens/vida3.png";
+
+                roda();
+            }
+
+            function roda() {
+                atualiza();
+                desenha();
+                window.requestAnimationFrame(roda);
+            }
+
+            function atualiza() { //chama os métodos para atualizar os objetos
+                if (estadoAtual == estados.jogando) {
+                    obstaculos.atualiza();
+                }
+
+                chao.atualiza();
+                bloco.atualiza();
+            }
+
+            function desenha() { //Desenha o bloco inicial
+                spriteBg.desenha(0, 0);
+
+                ctx.fillStyle = "#ff0";
+                ctx.font = "bold 50px Arial";
+                ctx.fillText(bloco.score, 30, 56);
+                //ctx.fillText(bloco.vidas, 550, 56);
+
+                ctx.fillStyle = "rgba(0,0,0," + labelNovaFase.opacidade + ")";
+
+                if (estadoAtual == estados.jogando) {
+                    obstaculos.desenha();
+					if (bloco.vidas == 1){
+						spritevida.desenha(LARGURA / 1.12, 15);
+					}else if (bloco.vidas == 2){
+						spritevida.desenha(LARGURA / 1.12, 15);
+					    spritevida.desenha(LARGURA / 1.16, 15);
+					}else  if (bloco.vidas == 3){
+						spritevida.desenha(LARGURA / 1.12, 15);
+					    spritevida.desenha(LARGURA / 1.16, 15);
+						spritevida.desenha(LARGURA / 1.20, 15);
+					}else if (bloco.vidas == 4){
+						spritevida.desenha(LARGURA / 1.12, 15);
+					    spritevida.desenha(LARGURA / 1.16, 15);
+						spritevida.desenha(LARGURA / 1.20, 15);
+						spritevida.desenha(LARGURA / 1.24, 15);
+					}else if (bloco.vidas == 5){
+						spritevida.desenha(LARGURA / 1.12, 15);
+					    spritevida.desenha(LARGURA / 1.16, 15);
+						spritevida.desenha(LARGURA / 1.20, 15);
+						spritevida.desenha(LARGURA / 1.24, 15);
+						spritevida.desenha(LARGURA / 1.28, 15);
+					}else if (bloco.vidas == 6){
+						spritevida.desenha(LARGURA / 1.12, 15);
+					    spritevida.desenha(LARGURA / 1.16, 15);
+						spritevida.desenha(LARGURA / 1.20, 15);
+						spritevida.desenha(LARGURA / 1.24, 15);
+						spritevida.desenha(LARGURA / 1.28, 15);
+						spritevida.desenha(LARGURA / 1.32, 15);
+					}else if (bloco.vidas == 7){
+						spritevida.desenha(LARGURA / 1.12, 15);
+					    spritevida.desenha(LARGURA / 1.16, 15);
+						spritevida.desenha(LARGURA / 1.20, 15);
+						spritevida.desenha(LARGURA / 1.24, 15);
+						spritevida.desenha(LARGURA / 1.28, 15);
+						spritevida.desenha(LARGURA / 1.32, 15);
+						spritevida.desenha(LARGURA / 1.36, 15);
+					}
+                }
+
+                if (estadoAtual == estados.jogar) {
+                    spriteJogar.desenha(LARGURA / 2 - spriteJogar.largura / 2,
+                            ALTURA / 3 - spriteJogar.altura / 2);
+                }
+
+                if (estadoAtual == estados.perdeu) {
+                    spritePerdeu.desenha(LARGURA / 2 - spritePerdeu.largura / 2,
+                            ALTURA / 3 - spritePerdeu.altura / 2);
+
+                    spriteScore.desenha(LARGURA / 2 - spriteScore.largura / 2,
+                            ALTURA / 2);
+
+                    ctx.font = "italic bold 30pt Arial";
+                    if (bloco.score > record) {
+                        ctx.fillStyle = "#f00";
+                        ctx.fillText("Novo", 220, 400);
+                        ctx.fillText("Record : " + bloco.score, 170, 440);
+                    } else {
+                        ctx.fillStyle = "#ffa500";
+                        ctx.fillText("Pontos : " + bloco.score, 170, 390);
+                        ctx.fillText("Record : " + record, 170, 430);
+
+                        if (tocouperdeu == false) {
+                            createjs.Sound.play("perdeu");
+                            tocouperdeu = true;
+                        }
+                    }
+                }
+
+                chao.desenha();
+                bloco.desenha();
+            }
+            
+
+            main();
+        </script>
+    </body>
+</html>
